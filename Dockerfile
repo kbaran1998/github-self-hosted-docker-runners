@@ -72,14 +72,16 @@ RUN useradd -m docker \
 
 # ─── repo runner ─────────────────────────────────────────────────────────────
 FROM base AS repo-runner
+COPY common/runner.sh /common/runner.sh
 COPY repo-runner/run.sh /run.sh
-RUN chmod +x /run.sh
+RUN chmod +x /common/runner.sh /run.sh
 USER docker
 ENTRYPOINT ["/run.sh"]
 
 # ─── org runner ──────────────────────────────────────────────────────────────
 FROM base AS org-runner
+COPY common/runner.sh /common/runner.sh
 COPY org-runner/run.sh /run.sh
-RUN chmod +x /run.sh
+RUN chmod +x /common/runner.sh /run.sh
 USER docker
 ENTRYPOINT ["/run.sh"]

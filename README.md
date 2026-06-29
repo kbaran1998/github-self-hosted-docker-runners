@@ -40,7 +40,7 @@ Use these when you need things GitHub-hosted runners can't easily give you: cust
 Three steps: **clone → configure → run.** First make sure you have [Docker + Compose](#prerequisites) and a [Personal Access Token](#prerequisites).
 
 ```bash
-git clone <this-repo-url> && cd <this-repo>
+git clone git@github.com:kbaran1998/github-self-hosted-docker-runners.git && cd github-self-hosted-docker-runners
 ```
 
 **Option A — a runner for one repository:**
@@ -79,7 +79,7 @@ Point a workflow at it (see [Targeting runners](#targeting-runners-in-workflows)
 ## Prerequisites
 
 - **Docker** and **Docker Compose** on the host.
-- A **GitHub Personal Access Token (PAT)**. The token is used only at startup to register the runner — see [How registration works](#how-a-runner-registers).
+- A **GitHub Personal Access Token (PAT)**. The token is used only at startup to register the runner. See [How registration works](#how-a-runner-registers).
 
 Required scopes depend on what the runner is attached to:
 
@@ -147,7 +147,7 @@ runs-on: github-actions-acme-web-app-runner
 
 ## Org runner
 
-Registers a runner scoped to an **entire organization** — any repo in the org can use it.
+Registers a runner scoped to an **entire organization**. Any repo in the org can use it.
 
 ```bash
 cd org-runner
@@ -181,7 +181,7 @@ runs-on: github-actions-acme-runner
 
 GitHub matches a job's `runs-on` against a runner's **labels** (not its name). When you list several labels, **all** of them must match.
 
-Every runner here automatically gets the standard labels GitHub assigns — `self-hosted`, the OS (`Linux`), and the architecture (`X64`) — plus a **custom label** set in `run.sh` for precise routing.
+Every runner here automatically gets the standard labels GitHub assigns: `self-hosted`, the OS (`Linux`), and the architecture (`X64`). Plus a **custom label** set in `run.sh` for precise routing.
 
 ```yaml
 jobs:
@@ -213,7 +213,7 @@ docker compose up --build -d --scale github-actions-repo-runner=3
 This starts 3 containers, each registering as a separate runner. GitHub distributes queued jobs across them automatically.
 
 > [!NOTE]
-> When scaling, remove the `container_name` field from `docker-compose.yml` — Docker can't give the same name to multiple containers.
+> When scaling, remove the `container_name` field from `docker-compose.yml`. Docker can't give the same name to multiple containers.
 
 ---
 
@@ -292,20 +292,16 @@ The registration token expires within about an hour, so even if it leaked out of
 
 The `Dockerfile` is split into a **fat base stage** and several **thin per-runner-type stages**.
 
-The `base` stage installs everything heavy — Ubuntu packages, the Docker CLI, Node, Python, the build toolchain, and the runner tarball itself. Because all of that lives in one cached layer, it's built **once** and shared by every runner type. Each runner type is then just a few lines on top of `base` that copy in the right `run.sh` and set the entrypoint:
+The `base` stage installs everything heavy: Ubuntu packages, the Docker CLI, Node, Python, the build toolchain, and the runner tarball itself. Because all of that lives in one cached layer, it's built **once** and shared by every runner type. Each runner type is then just a few lines on top of `base` that copy in the right `run.sh` and set the entrypoint:
 
 ```dockerfile
 FROM base AS repo-runner
+COPY common/runner.sh /common/runner.sh
 COPY repo-runner/run.sh /run.sh
-RUN chmod +x /run.sh
+RUN chmod +x /common/runner.sh /run.sh
 USER docker
 ENTRYPOINT ["/run.sh"]
 ```
-
-Two consequences worth knowing:
-
-- **Adding a runner type is cheap** — see [Adding a new runner type](#adding-a-new-runner-type).
-- **The runner version is fixed at build time** via the `RUNNER_VERSION` build arg. That's why changing it requires `--build`.
 
 ### Docker-in-Docker
 
@@ -318,17 +314,17 @@ volumes:
 
 The `docker` CLI inside the runner then talks to the **host's** Docker daemon directly. Any image it builds or container it starts is actually created on the host, as a sibling of the runner container. The base image adds the runner user to the `docker` group so it's allowed to use that socket. No `docker:dind` sidecar needed.
 
-This is simpler and faster than a sidecar — but it has a real security cost, covered next.
+This is simpler and faster than a sidecar, but it has a real security cost. See [Security notes](#security-notes) for more details.
 
 ### Persistent vs. ephemeral runners
 
-By default these runners are **persistent**: a container registers once and serves many jobs over its lifetime, only deregistering when it shuts down. That's efficient and keeps caches warm — but it also means state from one job (files in the work directory, leftover Docker images, stray processes) can carry into the next unless your workflow cleans up after itself.
+By default these runners are **persistent**: a container registers once and serves many jobs over its lifetime, only deregistering when it shuts down. That's efficient and keeps caches warm, but it also means state from one job (files in the work directory, leftover Docker images, stray processes) can carry into the next unless your workflow cleans up after itself.
 
 If you want hard isolation between jobs, register with the `--ephemeral` flag in `run.sh`. The runner then processes exactly **one** job and exits. Pair that with a restart policy plus `--scale` (or an external orchestrator) to keep a pool of fresh, single-use runners. For untrusted or sensitive workloads, ephemeral is the safer default.
 
 ### Why the runner doesn't run as root
 
-The official runner refuses to start as `root` unless you set `RUNNER_ALLOW_RUNASROOT=1`. That's why each stage ends with `USER docker` — the runner executes as a normal user, which is the supported and safer configuration.
+The official runner refuses to start as `root` unless you set `RUNNER_ALLOW_RUNASROOT=1`. That's why each stage ends with `USER docker`. The runner executes as a normal user, which is the supported and safer configuration.
 
 ---
 
@@ -336,11 +332,11 @@ The official runner refuses to start as `root` unless you set `RUNNER_ALLOW_RUNA
 
 Self-hosted runners run **your code on your machine**, so a few things are worth taking seriously.
 
-- **The Docker socket mount is root-equivalent.** Mounting `/var/run/docker.sock` gives the container — and therefore any workflow step running on it — control of the host's Docker daemon. A malicious step could start a container that mounts the host filesystem, which is effectively root on the host. **Only run workflows you trust**, and prefer a disposable VM over a machine you care about.
+- **The Docker socket mount is root-equivalent.** Mounting `/var/run/docker.sock` gives the container (and therefore any workflow step running on it) control of the host's Docker daemon. A malicious step could start a container that mounts the host filesystem, which is effectively root on the host. **Only run workflows you trust**, and prefer a disposable VM over a machine you care about.
 
 - **Do not attach these to public repositories.** A pull request from a fork can run arbitrary code on your runner, and combined with the socket mount that means arbitrary code on your host. GitHub [explicitly warns against this](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners#self-hosted-runner-security). Keep self-hosted runners on **private** repos and trusted internal workflows.
 
-- **Protect the PAT.** Use the narrowest scope that works (prefer fine-grained tokens), rotate it periodically, and keep `.env` out of version control — make sure it's in `.gitignore`. Never bake a token into the image. The registration token the runner actually uses is short-lived; the PAT is the long-lived secret that matters.
+- **Protect the PAT.** Use the narrowest scope that works (prefer fine-grained tokens), rotate it periodically, and keep `.env` out of version control. Make sure it's in `.gitignore`. Never bake a token into the image. The registration token the runner actually uses is short-lived; the PAT is the long-lived secret that matters.
 
 - **Isolate the host.** Run on a dedicated, disposable host rather than your laptop or a production server, and be mindful of what that host can reach if it sits inside a private network.
 
