@@ -1,0 +1,20 @@
+services:
+  github-actions-org-runner:
+    container_name: github-actions-${ORGANIZATION}-runner
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: org-runner
+      args:
+        RUNNER_VERSION: ${RUNNER_VERSION}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "run.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped

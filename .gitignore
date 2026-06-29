@@ -1,0 +1,12 @@
+# env files
+.env*
+*.env
+
+# logs
+logs/
+
+# cache
+cache/
+
+# tmp
+tmp/

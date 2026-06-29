@@ -1,2 +1,4 @@
-# github-self-hosted-docker-runners
-Setup for GitHub Self-hosted runners
+# GitHub Self-hosted Docker Runners
+
+Setup for GitHub Self-hosted Docker runners.
+
